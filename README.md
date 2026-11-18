@@ -18,14 +18,12 @@ That's the idea behind ElevatorFinder.
 
 ## ✨ What It Does
 
-Choose your destination station and travel direction, and ElevatorFinder shows:
+Search for a station or a trip between two places, and ElevatorFinder shows:
 
-- 🚇 Recommended train car
-- 🚪 Recommended door
-- ↕️ Approximate elevator location
-- 🚶 Walking directions after getting off
-- ⭐ Favorite stations for quick access
-- 🔄 Direction switching
+- 🚇 Platform elevator positions by line and travel direction, including train-door labels such as `6-3`
+- ↕️ Elevator operating status and ground-level exit names
+- 🔄 Transfer-station guidance for the arriving and departing lines when a route changes lines
+- ⭐ Favorite destinations for quick access
 
 The goal is simple:
 
@@ -33,15 +31,15 @@ The goal is simple:
 
 ## 🧪 Current Prototype
 
-ElevatorFinder is currently an early prototype focused on the **Seoul subway system**.
+ElevatorFinder is a React webapp focused on the **Seoul subway system**. It uses Kakao for place and transit searches and Seoul Metro's elevator records for station equipment. A clearly labeled fictional route preview is available without API keys.
 
-Pilot stations currently included:
+### 2026-11-18 update
 
-- Seoul Station (서울역)
-- Jamsil Station (잠실역)
-- Gangnam Station (강남역)
-
-The current recommendations use pilot data while the project prepares for integration with verified elevator-location data.
+- Made station cards easier to scan, with separate platform direction, train position, and operating status.
+- Moved ground-level exit elevators out of the platform list so exit names appear once.
+- Removed unverified map coordinates after two markers appeared to point to escalators. Ground-level exits now come only from records identified as elevators.
+- Added a visible transfer-station label to route choices and numbered guidance for the arriving and departing platforms.
+- Added optional KRIC transfer-movement lookup. When a verified connecting path is unavailable, the app states that the step-free connection is unconfirmed.
 
 > ⚠️ Elevator locations, platform layouts, construction, and accessibility conditions can change. Always follow current station signage and staff guidance when traveling.
 
@@ -84,10 +82,17 @@ Vite will provide a local URL where you can open the app in your browser.
 elevatorfinder/
 ├── src/
 │   ├── api/
-│   │   └── elevatorApi.js
-│   ├── main.jsx
-│   ├── pilotData.js
-│   └── styles.css
+│   │   ├── kakaoMaps.js
+│   │   └── routeApi.js
+│   ├── navigationMain.jsx
+│   ├── StationSearch.jsx
+│   ├── TransferCard.jsx
+│   └── navigation.css
+├── server/
+│   ├── api.js
+│   ├── kakaoRoutes.js
+│   └── seoulElevators.js
+├── SETUP.md
 ├── index.html
 ├── package.json
 └── pnpm-lock.yaml
@@ -95,13 +100,7 @@ elevatorfinder/
 
 ## 🔌 API Integration
 
-The project includes an API integration layer in:
-
-```text
-src/api/elevatorApi.js
-```
-
-The public repository intentionally contains placeholders instead of a private API key.
+Use [SETUP.md](SETUP.md) and [.env.example](.env.example) to configure keys locally. `.env.local` is ignored by Git and must stay private. Kakao's JavaScript map key is exposed to the browser, so restrict its allowed domains. Kakao REST, Seoul, and optional KRIC keys are read by the local server.
 
 **Never commit a private API key directly to the public repository.**
 
@@ -113,8 +112,8 @@ Future ideas for ElevatorFinder include:
 
 - More Seoul subway stations
 - Verified elevator locations
-- Official public transit/API integration
-- Transfer-station elevator guidance
+- Verify ground-level elevator coordinates against the named facilities
+- Verify step-free transfer corridors across more stations
 - Accessible route planning
 - Better mobile experience
 - Community reporting for outdated information
