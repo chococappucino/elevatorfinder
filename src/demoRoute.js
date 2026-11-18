@@ -1,9 +1,19 @@
+import { normalizeStationName } from "./routeModel.js";
+
 // Fictional stations and equipment: UI preview only, never travel directions.
 const start = { name: "가상 A역", lat: 37.55, lon: 126.98 };
 const middle = { name: "가상 B역", lat: 37.56, lon: 126.99 };
 const transfer = { name: "가상 C역", lat: 37.57, lon: 127.0 };
-const origin = { name: "샘플 출발지", lat: 37.548, lon: 126.978 };
-const destination = { name: "샘플 도착지", lat: 37.562, lon: 126.992 };
+const origin = { name: "샘플 출발지", nameKey: "demo.origin", lat: 37.548, lon: 126.978 };
+const destination = { name: "샘플 도착지", nameKey: "demo.destination", lat: 37.562, lon: 126.992 };
+
+const stationLetters = new Map([[start, "A"], [middle, "B"], [transfer, "C"]]
+  .map(([point, letter]) => [normalizeStationName(point.name), letter]));
+
+export function demoStationName(name, t) {
+  const letter = stationLetters.get(normalizeStationName(name));
+  return letter ? t("demo.station", { letter }) : name;
+}
 
 export const demoRoutes = [
   {
@@ -29,14 +39,14 @@ export const demoElevatorData = {
   "가상 A|2": {
     status: "available",
     facilities: [
-      { name: "샘플 엘리베이터 A", location: "가상 승강장 중앙", section: "B2–B1", statusText: "사용가능", operating: true },
-      { name: "샘플 엘리베이터 B", location: "가상 2번 출입구", section: "B1–1F", statusText: "사용불가", operating: false },
+      { name: "샘플 엘리베이터 A", location: "가상 승강장 중앙", locationKey: "demo.platform", section: "B2–B1", statusText: "사용가능", operating: true },
+      { name: "샘플 엘리베이터 B", location: "가상 2번 출입구", locationKey: "demo.exit", section: "B1–1F", statusText: "사용불가", operating: false },
     ],
     paths: [{ label: "가상 승강장 → 출구", steps: ["승강장 중앙의 샘플 엘리베이터로 이동", "B1층에서 샘플 출구 안내를 따라 이동"] }],
   },
   "가상 B|2": {
     status: "available",
-    facilities: [{ name: "샘플 엘리베이터 C", location: "가상 환승 통로", section: "B2–B1", statusText: "사용가능", operating: true }],
+    facilities: [{ name: "샘플 엘리베이터 C", location: "가상 환승 통로", locationKey: "demo.corridor", section: "B2–B1", statusText: "사용가능", operating: true }],
     paths: [],
   },
   "가상 B|3": { status: "missing", facilities: [], paths: [] },

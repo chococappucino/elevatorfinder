@@ -18,7 +18,7 @@ export function loadKakaoMaps() {
       if (!window.kakao?.maps?.load) return reject(new Error("카카오 지도 서비스를 불러오지 못했어요."));
       window.kakao.maps.load(() => resolve(window.kakao.maps));
     };
-    script.onerror = () => reject(new Error("카카오 지도를 불러오지 못했어요. Kakao Developers의 JavaScript 키 설정에서 http://localhost:5173을 JavaScript SDK 도메인에 등록했는지 확인해 주세요."));
+    script.onerror = () => reject(new Error("Kakao Maps SDK could not be loaded."));
     document.head.appendChild(script);
   }).catch((error) => { loadingMaps = null; throw error; });
 

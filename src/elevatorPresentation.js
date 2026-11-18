@@ -5,6 +5,12 @@ export function elevatorLocationParts(location, name) {
   return { label: `${match[1].trim()} 방면${match[3].trim() ? ` ${match[3].trim()}` : ""}`, door: match[2] };
 }
 
+export function facilityPosition(facility, t) {
+  const name = facility.unnamed || !facility.name ? t("elevator.label") : facility.name;
+  const { label, door } = elevatorLocationParts(facility.location, name);
+  return { label: facility.locationKey ? t(facility.locationKey) : label, door };
+}
+
 export function isTransferFacility(facility) {
   return /환승|연결\s*통로/.test(`${facility?.name || ""} ${facility?.location || ""}`);
 }
