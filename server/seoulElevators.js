@@ -1,3 +1,5 @@
+import { englishStationLabel, englishStationSearchNames, normalizeEnglishStation } from "./stationLabels.js";
+
 const SEOUL_API_BASE = "http://openapi.seoul.go.kr:8088";
 const SERVICE = "SeoulMetroFaciInfo";
 const PAGE_SIZE = 1000;
@@ -30,9 +32,36 @@ export function selectSeoulElevators(rows, name, line) {
     const operating = statusText === "사용가능" ? true
       : /사용불가|고장|중지|운행중단/.test(statusText) ? false : null;
     return [String(row.STN_CD || "") + nameText + location, {
-      name: nameText || "엘리베이터", location, section, statusText, operating, line: String(row.STN_NM || "").match(/\((\d+)\)\s*$/)?.[1] || "",
+      name: nameText || "엘리베이터", ...(!nameText && { unnamed: true }),
+      location, section, statusText, operating, line: String(row.STN_NM || "").match(/\((\d+)\)\s*$/)?.[1] || "",
     }];
   })).values()].slice(0, 80);
+}
+
+function suggestStations(rows, query) {
+  const search = normalizeSeoulStation(query).toLowerCase();
+  const englishSearch = normalizeEnglishStation(query);
+  const stations = new Set();
+  for (const row of rows) {
+    if (!/^EV$/i.test(String(row.ELVTR_SE || "").trim())) continue;
+    const station = normalizeSeoulStation(row.STN_NM);
+    if (station && station.length <= 29) stations.add(station);
+  }
+
+  const exact = [];
+  const prefixes = [];
+  const matches = [];
+  for (const station of stations) {
+    const name = station.toLowerCase();
+    const aliases = englishSearch ? englishStationSearchNames(station) : [];
+    if (name === search || aliases.includes(englishSearch)) exact.push(station);
+    else if (name.startsWith(search) || aliases.some(alias => alias.startsWith(englishSearch))) prefixes.push(station);
+    else if (name.includes(search) || aliases.some(alias => alias.includes(englishSearch))) matches.push(station);
+  }
+  return [...exact, ...prefixes, ...matches].slice(0, 6).map(station => {
+    const englishName = englishStationLabel(station);
+    return { name: `${station}역`, ...(englishName && { englishName }) };
+  });
 }
 
 export function createSeoulElevatorClient(key, fetchImpl = fetch) {
@@ -68,5 +97,8 @@ export function createSeoulElevatorClient(key, fetchImpl = fetch) {
     return pending;
   }
 
-  return async (name, line) => selectSeoulElevators(await load(), name, line);
+  return {
+    find: async (name, line) => selectSeoulElevators(await load(), name, line),
+    suggest: async (query) => suggestStations(await load(), query),
+  };
 }

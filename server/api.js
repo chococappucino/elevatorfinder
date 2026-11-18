@@ -1,5 +1,7 @@
 import { createSeoulElevatorClient } from "./seoulElevators.js";
 import { normalizeKakaoRoutes } from "./kakaoRoutes.js";
+import { kakaoStationEnglishLabel } from "./stationLabels.js";
+import tollgateNames from "./tollgateNames.js";
 
 const KAKAO_BASE = "https://dapi.kakao.com/v2";
 const KRIC_BASE = "https://openapi.kric.go.kr/openapi";
@@ -15,16 +17,20 @@ function sendJson(response, status, payload) {
   response.end(JSON.stringify(payload));
 }
 
+function sendError(response, status, code, error) {
+  return sendJson(response, status, { error, code });
+}
+
 async function readJson(request) {
   let body = "";
   for await (const chunk of request) {
     body += chunk;
-    if (body.length > 8192) throw Object.assign(new Error("요청이 너무 큽니다."), { status: 413 });
+    if (body.length > 8192) throw Object.assign(new Error("요청이 너무 큽니다."), { status: 413, apiCode: "request_too_large" });
   }
   try {
     return JSON.parse(body);
   } catch {
-    throw Object.assign(new Error("요청 형식을 확인해 주세요."), { status: 400 });
+    throw Object.assign(new Error("요청 형식을 확인해 주세요."), { status: 400, apiCode: "invalid_request" });
   }
 }
 
@@ -32,6 +38,13 @@ function validPoint(point) {
   const lat = Number(point?.lat);
   const lng = Number(point?.lng);
   return Number.isFinite(lat) && Number.isFinite(lng) && lat >= 33 && lat <= 39 && lng >= 124 && lng <= 132;
+}
+
+function placeFromDocument(place, fallback) {
+  const lat = Number(place?.y);
+  const lng = Number(place?.x);
+  if (!validPoint({ lat, lng })) return null;
+  return { name: String(place.place_name || place.address_name || fallback), lat, lng };
 }
 
 async function kakaoGet(path, params, key) {
@@ -42,7 +55,7 @@ async function kakaoGet(path, params, key) {
     signal: AbortSignal.timeout(15000),
   });
   const payload = await response.json().catch(() => null);
-  if (!response.ok || !payload) throw Object.assign(new Error("카카오 길찾기 서비스를 불러오지 못했어요."), { status: 502 });
+  if (!response.ok || !payload) throw Object.assign(new Error("카카오 길찾기 서비스를 불러오지 못했어요."), { status: 502, apiCode: "kakao_unavailable" });
   return payload;
 }
 
@@ -53,10 +66,40 @@ async function kakaoPlace(query, key) {
     const keyword = await kakaoGet("local/search/keyword.json", { query, size: 5 }, key);
     place = keyword.documents?.[0];
   }
-  const lat = Number(place?.y);
-  const lng = Number(place?.x);
-  if (!validPoint({ lat, lng })) return null;
-  return { name: String(place.place_name || place.address_name || query), lat, lng };
+  return placeFromDocument(place, query);
+}
+
+async function kakaoPlaceSuggestions(query, key) {
+  const results = await Promise.allSettled([
+    kakaoGet("local/search/address.json", { query, size: 6, analyze_type: "similar" }, key),
+    kakaoGet("local/search/keyword.json", { query, size: 6 }, key),
+  ]);
+  if (results.every(result => result.status === "rejected")) throw results[0].reason;
+
+  const suggestions = new Map();
+  for (const result of results) {
+    if (result.status !== "fulfilled") continue;
+    for (const doc of result.value.documents || []) {
+      const place = placeFromDocument(doc, query);
+      if (!place) continue;
+      const address = doc.road_address_name || doc.address_name || "";
+      const id = JSON.stringify([place.name, place.lat, place.lng]);
+      if (!suggestions.has(id)) {
+        const tollgate = /(?:^|>\s*)톨게이트$/.test(doc.category_name || "");
+        const tollgateName = place.name.replace(/\s*(?:TG|톨게이트|요금소)$/i, "");
+        const area = (doc.address_name || address).trim().split(/\s+/, 2).join(" ");
+        const tollgateLabel = tollgate && Object.hasOwn(tollgateNames, tollgateName) && tollgateNames[tollgateName][area];
+        const englishName = kakaoStationEnglishLabel(doc) || (tollgateLabel && `${tollgateLabel} Tollgate`);
+        suggestions.set(id, {
+          ...place,
+          detail: address !== place.name ? address : "",
+          ...(englishName && { englishName }),
+          ...(tollgate && { type: "tollgate" }),
+        });
+      }
+    }
+  }
+  return [...suggestions.values()].slice(0, 6);
 }
 
 function normalizedName(value) {
@@ -169,25 +212,36 @@ export function createApiHandler({ kakaoRestKey, kricKey, seoulKey }) {
     const url = new URL(request.url, "http://localhost");
     try {
       if (url.pathname === "/routes" && request.method === "POST") {
-        if (!configured(kakaoRestKey)) return sendJson(response, 503, { error: "KAKAO_REST_API_KEY를 .env.local에 넣어 주세요." });
+        if (!configured(kakaoRestKey)) return sendError(response, 503, "kakao_not_configured", "KAKAO_REST_API_KEY를 .env.local에 넣어 주세요.");
         const { start, end } = await readJson(request);
-        if (!validPoint(start) || !validPoint(end)) return sendJson(response, 400, { error: "출발지와 도착지 좌표를 확인해 주세요." });
+        if (!validPoint(start) || !validPoint(end)) return sendError(response, 400, "invalid_route_points", "출발지와 도착지 좌표를 확인해 주세요.");
         const payload = await kakaoGet("routing/publictraffic", {
           start_x: start.lng, start_y: start.lat,
           end_x: end.lng, end_y: end.lat,
         }, kakaoRestKey);
         const itineraries = normalizeKakaoRoutes(payload);
-        if (!itineraries.length) return sendJson(response, 404, { error: "이 출발지와 도착지의 대중교통 경로를 찾지 못했어요." });
+        if (!itineraries.length) return sendError(response, 404, "no_routes", "이 출발지와 도착지의 대중교통 경로를 찾지 못했어요.");
         return sendJson(response, 200, { itineraries });
       }
 
       if (url.pathname === "/place" && request.method === "GET") {
-        if (!configured(kakaoRestKey)) return sendJson(response, 503, { error: "KAKAO_REST_API_KEY를 .env.local에 넣어 주세요." });
+        if (!configured(kakaoRestKey)) return sendError(response, 503, "kakao_not_configured", "KAKAO_REST_API_KEY를 .env.local에 넣어 주세요.");
         const query = String(url.searchParams.get("query") || "").trim();
-        if (!query || query.length > 80) return sendJson(response, 400, { error: "주소 또는 장소 이름을 확인해 주세요." });
+        if (!query || query.length > 80) return sendError(response, 400, "invalid_place", "주소 또는 장소 이름을 확인해 주세요.");
         const place = await kakaoPlace(query, kakaoRestKey);
-        if (!place) return sendJson(response, 404, { error: "장소를 찾지 못했어요. 주소나 가까운 역 이름을 입력해 주세요." });
+        if (!place) return sendError(response, 404, "place_not_found", "장소를 찾지 못했어요. 주소나 가까운 역 이름을 입력해 주세요.");
         return sendJson(response, 200, place);
+      }
+
+      if (url.pathname === "/suggestions" && request.method === "GET") {
+        const query = String(url.searchParams.get("query") || "").trim();
+        const station = url.searchParams.get("type") === "station";
+        if (query.length < 2 || query.length > (station ? 30 : 80)) {
+          return sendError(response, 400, "invalid_place", "검색어를 확인해 주세요.");
+        }
+        if (station) return sendJson(response, 200, { suggestions: await seoulElevators?.suggest(query) || [] });
+        if (!configured(kakaoRestKey)) return sendError(response, 503, "kakao_not_configured", "KAKAO_REST_API_KEY를 .env.local에 넣어 주세요.");
+        return sendJson(response, 200, { suggestions: await kakaoPlaceSuggestions(query, kakaoRestKey) });
       }
 
       if (url.pathname === "/station" && request.method === "GET") {
@@ -204,9 +258,9 @@ export function createApiHandler({ kakaoRestKey, kricKey, seoulKey }) {
       if (url.pathname === "/elevators" && request.method === "GET") {
         const name = normalizedName(url.searchParams.get("name"));
         const line = url.searchParams.get("line") || "";
-        if (!name || name.length > 30 || (line && !/^\d+$/.test(line))) return sendJson(response, 400, { error: "역 이름과 노선을 확인해 주세요." });
+        if (!name || name.length > 30 || (line && !/^\d+$/.test(line))) return sendError(response, 400, "invalid_station", "역 이름과 노선을 확인해 주세요.");
         const [seoulResult, kricResult] = await Promise.allSettled([
-          seoulElevators ? seoulElevators(name, line) : Promise.resolve([]),
+          seoulElevators ? seoulElevators.find(name, line) : Promise.resolve([]),
           configured(kricKey) ? kricElevatorPaths(name, line, kricKey) : Promise.resolve([]),
         ]);
         const facilities = seoulResult.status === "fulfilled" ? seoulResult.value : [];
@@ -241,7 +295,7 @@ export function createApiHandler({ kakaoRestKey, kricKey, seoulKey }) {
 
       next();
     } catch (error) {
-      sendJson(response, error.status || 502, { error: error.message || "경로 정보를 가져오지 못했어요." });
+      sendJson(response, error.status || 502, { error: error.message || "경로 정보를 가져오지 못했어요.", code: error.apiCode });
     }
   };
 }

@@ -27,10 +27,12 @@ test("fetches pages once and keeps the API key out of the result", async () => {
   const calls = [];
   const client = createSeoulElevatorClient("test-secret", async (url) => {
     calls.push(url);
-    return { ok: true, json: async () => ({ SeoulMetroFaciInfo: { RESULT: { CODE: "INFO-000" }, list_total_count: 1, row: sampleRows.slice(0, 1) } }) };
+    return { ok: true, json: async () => ({ SeoulMetroFaciInfo: { RESULT: { CODE: "INFO-000" }, list_total_count: sampleRows.length, row: sampleRows } }) };
   });
-  assert.equal((await client("서울", "1")).length, 1);
-  assert.equal((await client("서울", "1")).length, 1);
+  const suggestions = [{ name: "서울역", englishName: "Seoul Station" }];
+  assert.deepEqual(await client.suggest("서울"), suggestions);
+  assert.deepEqual(await client.suggest("Seoul Station"), suggestions);
+  assert.equal((await client.find("서울", "1")).length, 2);
   assert.equal(calls.length, 1);
-  assert.ok(!JSON.stringify(await client("서울", "1")).includes("test-secret"));
+  assert.ok(!JSON.stringify(await client.find("서울", "1")).includes("test-secret"));
 });
