@@ -7,6 +7,7 @@ import { appShell } from "./server/pwaBuild.js";
 const projectRoot = fileURLToPath(new URL(".", import.meta.url));
 
 export default defineConfig(({ mode }) => {
+  const pagesBuild = process.env.GITHUB_PAGES === "true";
   const env = loadEnv(mode, projectRoot, "");
   const api = createApiHandler({
     kakaoRestKey: env.KAKAO_REST_API_KEY,
@@ -15,6 +16,7 @@ export default defineConfig(({ mode }) => {
   });
 
   return {
+    base: pagesBuild ? "/elevatorfinder/" : "/",
     server: { watch: { ignored: ["**/public/station-maps/**"] } },
     plugins: [
       react(),

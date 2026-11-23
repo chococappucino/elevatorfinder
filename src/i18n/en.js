@@ -4,6 +4,7 @@ export default {
   "app.title": "ElevatorFinder — Subway elevator directions",
   "app.language": "Language",
   "app.offline": "You’re offline. Favorites and the demo are available. Live transit and elevator searches need a connection.",
+  "app.pagesPreview": "This GitHub Pages preview shows a sample route. Live directions and elevator search are being prepared.",
   "install.action": "Install app",
   "install.ios": "In Safari, open Share and tap Add to Home Screen. Turn on Open as Web App if shown, then tap Add.",
   "app.tagline": "Easier trips with kids",

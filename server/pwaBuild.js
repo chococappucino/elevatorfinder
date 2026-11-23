@@ -13,9 +13,13 @@ const publicShell = [
 ];
 
 export function appShell() {
+  let base = "/";
   return {
     name: "elevatorfinder-app-shell",
     apply: "build",
+    configResolved(config) {
+      base = config.base;
+    },
     async writeBundle({ dir }, bundle) {
       const assets = Object.keys(bundle).filter((file) => /\.(?:js|css)$/.test(file));
       const files = [...publicShell, ...assets].sort();
@@ -26,7 +30,7 @@ export function appShell() {
         revision.update(file).update(contents[index]);
       });
       const version = revision.digest("hex").slice(0, 20);
-      const paths = files.map((file) => `/${file}`);
+      const paths = files.map((file) => `${base}${file}`);
       await writeFile(join(dir, "sw.js"), [
         `const SHELL_VERSION = ${JSON.stringify(version)};`,
         `const SHELL_PATHS = ${JSON.stringify(paths)};`,

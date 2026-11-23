@@ -4,6 +4,7 @@ export default {
   "app.title": "내릴자리 — 엘리베이터 길찾기",
   "app.language": "언어",
   "app.offline": "오프라인 상태예요. 즐겨찾기와 예시는 볼 수 있어요. 실제 경로와 엘리베이터를 검색하려면 인터넷에 연결해 주세요.",
+  "app.pagesPreview": "GitHub Pages 화면 체험판이에요. 예시 경로를 볼 수 있으며, 실제 길찾기와 엘리베이터 검색은 준비 중이에요.",
   "install.action": "앱 설치",
   "install.ios": "Safari에서 공유를 열고 홈 화면에 추가를 선택하세요. 웹 앱으로 열기가 보이면 켠 뒤 추가를 누르세요.",
   "app.tagline": "아이와 함께 가는 길, 조금 더 편하게",

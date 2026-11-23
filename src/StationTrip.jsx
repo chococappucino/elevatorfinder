@@ -13,10 +13,10 @@ const initialFrom = "혜화역";
 const initialTo = "성수역";
 const unavailable = { status: "unavailable", facilities: [], paths: [] };
 const stationMaps = {
-  "혜화|4": "/station-maps/hyehwa-line4.jpg",
-  "동대문역사문화공원|4": "/station-maps/ddp-line4.jpg",
-  "동대문역사문화공원|2": "/station-maps/ddp-line2.jpg",
-  "성수|2": "/station-maps/seongsu-line2.jpg",
+  "혜화|4": "station-maps/hyehwa-line4.jpg",
+  "동대문역사문화공원|4": "station-maps/ddp-line4.jpg",
+  "동대문역사문화공원|2": "station-maps/ddp-line2.jpg",
+  "성수|2": "station-maps/seongsu-line2.jpg",
 };
 
 function stationTitle(name, t) {
@@ -37,7 +37,7 @@ function StationMap({ station, line }) {
   }
   return <div className="trip-map">
     <button type="button" className="trip-map-open" onClick={openMap} aria-label={t("stationTrip.mapOpenLabel", { title })}>
-      <img src={image} alt="" loading="lazy" />
+      <img src={`${import.meta.env.BASE_URL}${image}`} alt="" loading="lazy" />
       <span><strong>{title}</strong><small>{t("stationTrip.mapOpen")}</small></span>
     </button>
     <dialog ref={dialogRef} className="trip-map-dialog" aria-labelledby={titleId} onClick={(event) => { if (event.target === dialogRef.current) dialogRef.current.close(); }}>
@@ -50,7 +50,7 @@ function StationMap({ station, line }) {
           <button type="button" className="trip-map-close" aria-label={t("stationTrip.mapClose")} onClick={() => dialogRef.current?.close()}>×</button>
         </div>
       </div>
-      <div className="trip-map-viewer"><img src={image} alt={title} style={{ width: `${zoom}%` }} /></div>
+      <div className="trip-map-viewer"><img src={`${import.meta.env.BASE_URL}${image}`} alt={title} style={{ width: `${zoom}%` }} /></div>
       <p>{t("stationTrip.mapNote")}</p>
     </dialog>
   </div>;

@@ -214,7 +214,8 @@ function LegCard({ leg, elevatorData, demo, hideEntry = false, hideExit = false 
 
 function App() {
   const { language, t } = useLanguage();
-  const online = useOnline();
+  const pagesPreview = import.meta.env.VITE_GITHUB_PAGES === "true" && !import.meta.env.VITE_API_BASE_URL;
+  const online = useOnline() && !pagesPreview;
   const wideLayout = useWideLayout();
   const routeRequest = useRef(null);
   const locationRequest = useRef(null);
@@ -392,7 +393,7 @@ function App() {
         <button type="button" aria-pressed={searchMode === "station"} aria-controls="station-search-panel" onClick={() => setSearchMode("station")}>{t("station.searchMode")}</button>
         <button type="button" aria-pressed={searchMode === "station-trip"} aria-controls="station-trip-panel" onClick={() => setSearchMode("station-trip")}>{t("stationTrip.tab")}</button>
       </nav>
-      <div role="status" className={online ? "visually-hidden" : "offline-notice"}>{!online && t("app.offline")}</div>
+      <div role="status" className={online ? "visually-hidden" : "offline-notice"}>{!online && t(pagesPreview ? "app.pagesPreview" : "app.offline")}</div>
       <div id="route-search-panel" hidden={searchMode !== "route"}>
         <div className="search-workspace">
           <form className="search-card" onSubmit={search}>
@@ -530,7 +531,7 @@ createRoot(document.getElementById("root")).render(<LanguageProvider><App /></La
 
 if (import.meta.env.PROD && window.isSecureContext && "serviceWorker" in navigator) {
   window.addEventListener("load", () => {
-    navigator.serviceWorker.register("/sw.js", { updateViaCache: "none" }).catch((error) => {
+    navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`, { updateViaCache: "none" }).catch((error) => {
       console.warn("ElevatorFinder could not prepare offline access.", error);
     });
   }, { once: true });

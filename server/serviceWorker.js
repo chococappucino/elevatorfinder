@@ -23,8 +23,9 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
 
-  const isAppLaunch = request.mode === "navigate" && (url.pathname === "/" || url.pathname === "/index.html");
-  const path = isAppLaunch ? "/index.html" : url.pathname;
+  const scopePath = new URL(self.registration.scope).pathname;
+  const isAppLaunch = request.mode === "navigate" && (url.pathname === scopePath || url.pathname === `${scopePath}index.html`);
+  const path = isAppLaunch ? `${scopePath}index.html` : url.pathname;
   if (!shellPaths.has(path)) return;
 
   event.respondWith(caches.open(cacheName)
