@@ -22,6 +22,10 @@ test("normalizes Kakao walking and subway steps for directions and elevator look
   assert.equal(routes[0].legs[1].route, "2호선");
   assert.equal(routes[0].legs[1].start.name, "시청역");
   assert.equal(routes[0].legs[1].end.name, "을지로입구역");
+  assert.equal(routes[0].legs[0].start.nameRole, "startPoint");
+  assert.equal(routes[0].legs[0].start.name, "출발지");
+  assert.equal(routes[0].legs[0].end.nameRole, undefined);
+  assert.equal(routes[0].legs[2].end.nameRole, "endPoint");
   assert.deepEqual(routes[0].legs[1].stops, ["시청역", "을지로입구역"]);
   assert.deepEqual(legPoints(routes[0].legs[1]), [{ lat: 37.501, lng: 127.001 }, { lat: 37.51, lng: 127.01 }]);
   assert.deepEqual(elevatorStops(routes[0]), [{ name: "시청", line: "2" }, { name: "을지로입구", line: "2" }]);

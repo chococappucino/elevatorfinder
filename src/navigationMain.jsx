@@ -1,14 +1,20 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { hasKakaoMapKey, loadKakaoMaps } from "./api/kakaoMaps.js";
 import { findElevatorMovement, findPlace, findTransitRoutes, findTransferMovement } from "./api/routeApi.js";
 import { selectDirectionalElevators } from "./elevatorDirection.js";
 import { isGroundExitFacility } from "./elevatorPresentation.js";
 import { elevatorCoverage, elevatorStops, legPoints, minutes, normalizeStationName, routeTransfers, stopKey, subwayLine, transferKey } from "./routeModel.js";
-import { demoElevatorData, demoPoints, demoRoutes } from "./demoRoute.js";
+import { demoElevatorData, demoPoints, demoRoutes, demoStationName } from "./demoRoute.js";
+import { LanguageProvider, useLanguage } from "./i18n/LanguageProvider.jsx";
+import { languages, suggestionName } from "./i18n/messages.js";
+import { useOnline, useWideLayout } from "./browserState.js";
+import InstallApp from "./InstallApp.jsx";
+import SuggestionInput from "./SuggestionInput.jsx";
 import StationSearch from "./StationSearch.jsx";
 import FacilityRow from "./FacilityRow.jsx";
 import TransferCard from "./TransferCard.jsx";
+import setupGuideUrl from "../SETUP.md?url";
 import "./navigation.css";
 
 function routeSummary(route) {
@@ -20,31 +26,58 @@ function routeSummary(route) {
   };
 }
 
-async function resolvePlace(value) {
-  const name = value.trim();
-  if (!name) throw new Error("출발지와 도착지를 입력해 주세요.");
-  return findPlace(name);
+function Header() {
+  const { language, setLanguage, t } = useLanguage();
+  return <header className="site-header">
+    <div className="header-content">
+      <div className="brand-mark" aria-hidden="true">↥</div>
+      <div className="brand-name">{t("app.brand")}<span aria-hidden="true">.</span></div>
+      <div className="header-tools">
+        <InstallApp />
+        <select className="language-select" aria-label={t("app.language")} value={language} onChange={(event) => setLanguage(event.target.value)}>
+          {Object.entries(languages).map(([code, { label }]) => <option key={code} value={code} lang={code}>{label}</option>)}
+        </select>
+      </div>
+    </div>
+  </header>;
 }
 
 function DemoMap({ route }) {
+  const { t } = useLanguage();
   const stations = (route.legs || []).filter((leg) => leg.mode === "SUBWAY");
-  return <div className="demo-map" role="img" aria-label="가상 경로의 화면 예시. 실제 지도나 길 안내가 아닙니다.">
-    <span className="demo-map-label">화면 예시 · 실제 지도 아님</span>
+  return <div className="demo-map" role="img" aria-label={t("demo.mapLabel")}>
+    <span className="demo-map-label">{t("demo.mapBadge")}</span>
     <div className="demo-map-path">
-      <div className="demo-map-stop"><i className="start-dot" /><span>샘플 출발지</span></div>
-      {stations.map((leg, index) => <div className="demo-map-stop" key={`${index}-${leg.route}`}><i className="rail-dot" /><span>{leg.start.name}<small>{leg.route} 이용</small></span></div>)}
-      <div className="demo-map-stop"><i className="end-dot" /><span>샘플 도착지</span></div>
+      <div className="demo-map-stop"><i className="start-dot" /><span>{t("demo.origin")}</span></div>
+      {stations.map((leg, index) => <div className="demo-map-stop" key={`${index}-${leg.route}`}>
+        <i className="rail-dot" />
+        <span>
+          {t("station.title", { station: demoStationName(leg.start.name, t) })}
+          <small>{t("demo.mapLine", { line: t("line.title", { line: subwayLine(leg) }) })}</small>
+        </span>
+      </div>)}
+      <div className="demo-map-stop"><i className="end-dot" /><span>{t("demo.destination")}</span></div>
     </div>
   </div>;
 }
 
 function RouteMap({ route, start, end, demo }) {
+  const { t } = useLanguage();
   const element = useRef(null);
-  const [mapError, setMapError] = useState("");
+  const pins = useRef(new Map());
+  const pinLabels = useRef({});
+  const [mapError, setMapError] = useState(false);
+
+  useEffect(() => {
+    pinLabels.current = { origin: t("route.origin"), destination: t("route.destination") };
+    for (const [key, pin] of pins.current) pin.textContent = pinLabels.current[key];
+  }, [t]);
+
   useEffect(() => {
     if (!route || demo || !hasKakaoMapKey()) return undefined;
     let cancelled = false;
-    let overlays = [];
+    let resizeObserver;
+    const overlays = [];
     loadKakaoMaps().then((maps) => {
       if (cancelled || !element.current) return;
       const map = new maps.Map(element.current, { center: new maps.LatLng(start.lat, start.lng), level: 6 });
@@ -55,41 +88,87 @@ function RouteMap({ route, start, end, demo }) {
         path.forEach((point) => bounds.extend(point));
         overlays.push(new maps.Polyline({ map, path, strokeColor: leg.mode === "WALK" ? "#e18a56" : leg.mode === "BUS" ? "#426ca9" : "#16896f", strokeWeight: leg.mode === "WALK" ? 4 : 6, strokeOpacity: 0.9, strokeStyle: leg.mode === "WALK" ? "shortdash" : "solid" }));
       }
-      for (const [point, label, color] of [[start, "출발", "#263f35"], [end, "도착", "#e27d49"]]) {
+      for (const [point, key, color] of [[start, "origin", "#263f35"], [end, "destination", "#e27d49"]]) {
         const position = new maps.LatLng(point.lat, point.lng);
+        const pin = document.createElement("div");
+        pin.className = "map-pin";
+        pin.style.setProperty("--pin", color);
+        pin.textContent = pinLabels.current[key];
+        pins.current.set(key, pin);
         bounds.extend(position);
-        overlays.push(new maps.CustomOverlay({ map, position, content: `<div class="map-pin" style="--pin:${color}">${label}</div>`, yAnchor: 1 }));
+        overlays.push(new maps.CustomOverlay({ map, position, content: pin, yAnchor: 1 }));
       }
       map.setBounds(bounds);
-    }).catch((error) => { if (!cancelled) setMapError(error.message); });
-    return () => { cancelled = true; overlays.forEach((item) => item.setMap(null)); overlays = []; };
+      resizeObserver = new ResizeObserver(() => {
+        map.relayout();
+        map.setBounds(bounds);
+      });
+      resizeObserver.observe(element.current);
+    }).catch(() => { if (!cancelled) setMapError(true); });
+    return () => {
+      cancelled = true;
+      resizeObserver?.disconnect();
+      overlays.forEach((item) => item.setMap(null));
+      pins.current.clear();
+    };
   }, [route, start, end, demo]);
   if (!route) return null;
   if (demo) return <DemoMap route={route} />;
-  if (!hasKakaoMapKey() || mapError) return <div className="map-unavailable">{mapError || "카카오 지도 JavaScript 키를 연결하면 이곳에 지도가 표시돼요. 경로 검색은 REST API 키만으로도 가능합니다."}</div>;
-  return <div className="route-map" ref={element} role="img" aria-label="선택한 대중교통 경로 지도" />;
+  if (!hasKakaoMapKey() || mapError) {
+    const from = `${encodeURIComponent(start.name || t("route.origin"))},${start.lat},${start.lng}`;
+    const to = `${encodeURIComponent(end.name || t("route.destination"))},${end.lat},${end.lng}`;
+    return <div className="map-unavailable">
+      <div>
+        <p>{t(mapError ? "route.mapError" : "route.mapNeedsKey", { origin: window.location.origin })}</p>
+        <a href={`https://map.kakao.com/link/by/traffic/${from}/${to}`} target="_blank" rel="noreferrer">{t("route.openKakaoMap")}</a>
+      </div>
+    </div>;
+  }
+  return <>
+    <div className="route-map" ref={element} role="img" aria-label={t("route.mapLabel")} />
+    <div className="map-legend">
+      <span><i className="rail-key" /> {t("route.subway")}</span>
+      <span><i className="bus-key" /> {t("route.bus")}</span>
+      <span><i className="walk-key" /> {t("route.walk")}</span>
+    </div>
+  </>;
 }
 
-function ElevatorNote({ stop, data, role }) {
+function ElevatorNote({ stop, data, role, demo }) {
+  const { t } = useLanguage();
   const details = data[stopKey(stop.name, stop.line)];
   const facilities = details?.facilities || [];
   const groundExits = facilities.filter(isGroundExitFacility);
   const selected = selectDirectionalElevators(facilities.filter((facility) => !isGroundExitFacility(facility)), stop);
   const visibleFacilities = selected.facilities;
-  const summary = selected.status === "matched" ? `${selected.direction} 방면 승강장 · 엘리베이터 ${visibleFacilities.length}곳`
-    : selected.status === "unverified" ? "이 방향의 승강장 위치 확인 필요"
-      : visibleFacilities.length ? `엘리베이터 위치 ${visibleFacilities.length}곳 · 방향 정보 없음`
-        : "엘리베이터 정보 확인 필요";
-  const groundContent = groundExits.length > 0 && <div className="ground-elevator"><strong>지상 엘리베이터 위치</strong><p>엘리베이터가 연결된 출입구예요. 정확한 지도 좌표와 현재 위치에서의 보행거리는 확인되지 않았어요.</p>{groundExits.map((facility, index) => <FacilityRow facility={facility} key={`${index}-${facility.name}`} />)}</div>;
-  const platformContent = <div className="platform-elevator"><strong className="platform-label">{role === "entry" ? "승강장으로 내려가기" : "승강장에서 올라가기"}</strong>
-    {visibleFacilities.length > 0 && <div className="seoul-facilities"><p className="source-label">서울교통공사 승강기 가동현황 · {selected.status === "matched" ? `${selected.direction} 방면만 표시 · ` : "방향 정보 없음 · "}확인 시점에 따라 바뀔 수 있어요</p>{visibleFacilities.map((facility, index) => <FacilityRow facility={facility} key={`${index}-${facility.name}`} />)}</div>}
-    {selected.status === "unverified" && <p>이 이동 방향에 맞는 승강장 엘리베이터 위치를 확인하지 못했어요. 반대 방향 위치는 숨겼습니다. 역 안내 표지나 역무원에게 확인해 주세요.</p>}
-    {!visibleFacilities.length && selected.status !== "unverified" && <p>이 역의 승강장 엘리베이터 위치를 확인하지 못했어요. 역 안내 표지나 역무원에게 확인해 주세요.</p>}
-    {details?.sources?.seoul === "rejected" && <p className="source-warning">서울시 승강기 상태를 불러오지 못했어요.</p>}
+  const station = demo ? demoStationName(stop.name, t) : stop.name;
+  const direction = selected.direction;
+  const matched = selected.status === "matched";
+  const unverified = selected.status === "unverified";
+  const summary = matched ? "elevator.directionCount" : unverified ? "elevator.checkDirection"
+    : visibleFacilities.length ? "elevator.undirectedCount" : "elevator.checkInfo";
+  const groundContent = groundExits.length > 0 && <div className="ground-elevator">
+    <strong>{t("elevator.ground")}</strong>
+    <p>{t("elevator.groundHelp")}</p>
+    {groundExits.map((facility, index) => <FacilityRow facility={facility} key={`${index}-${facility.name}`} />)}
+  </div>;
+  const platformContent = <div className="platform-elevator">
+    <strong className="platform-label">{t(role === "entry" ? "elevator.enterPlatform" : "elevator.leavePlatform")}</strong>
+    {visibleFacilities.length > 0 && <div className="seoul-facilities">
+      {!demo && <p className="source-label">{t(matched ? "elevator.directionSource" : "elevator.undirectedSource", { direction })}</p>}
+      {visibleFacilities.map((facility, index) => <FacilityRow facility={facility} key={`${index}-${facility.name}`} />)}
+    </div>}
+    {unverified && <p>{t("elevator.directionUnverified")}</p>}
+    {!visibleFacilities.length && !unverified && <p>{t("elevator.stationUnverified")}</p>}
+    {details?.sources?.seoul === "rejected" && <p className="source-warning">{t("elevator.sourceUnavailable")}</p>}
   </div>;
   return <div className={`elevator-note ${visibleFacilities.length || groundExits.length ? "has-data" : ""}`}>
     <div className="elevator-heading">
-      <span className="lift-glyph" aria-hidden="true">↥</span><span><strong>{stop.name}역에서 {role === "entry" ? "타기" : "내리기"}</strong><small>{summary}</small></span>
+      <span className="lift-glyph" aria-hidden="true">↥</span>
+      <span>
+        <strong>{t(role === "entry" ? "elevator.boardAt" : "elevator.exitAt", { station })}</strong>
+        <small>{t(summary, { direction, count: visibleFacilities.length })}</small>
+      </span>
     </div>
     <div className="elevator-detail">
       {role === "entry" && groundContent}
@@ -99,34 +178,54 @@ function ElevatorNote({ stop, data, role }) {
   </div>;
 }
 
-function LegCard({ leg, elevatorData, hideEntry = false, hideExit = false }) {
+function routePointName(point, fallback, t, demo) {
+  if (point?.nameKey) return t(point.nameKey);
+  if (point?.nameRole) return t(`route.${point.nameRole}`);
+  if (!point?.name) return t(fallback);
+  return demo ? t("station.title", { station: demoStationName(point.name, t) }) : point.name;
+}
+
+function LegCard({ leg, elevatorData, demo, hideEntry = false, hideExit = false }) {
+  const { t } = useLanguage();
   const isRail = leg.mode === "SUBWAY";
+  const isBus = leg.mode === "BUS";
   const line = isRail ? subwayLine(leg) : "";
-  const title = isRail ? (leg.route || `${line}호선`) : leg.mode === "BUS" ? (leg.route || "버스") : "걸어서 이동";
+  const numberedLine = line && (!leg.route || /^\d+호선$/.test(leg.route));
+  const title = isRail ? (numberedLine ? t("line.title", { line }) : leg.route || t("route.subway"))
+    : isBus ? leg.route || t("route.bus") : t("route.walking");
   const rideStops = leg.stops || [];
   const stops = isRail ? [leg.start, leg.end].map((point, index) => ({
     name: normalizeStationName(point?.name), line,
     nextStation: index === 0 ? rideStops[1] : "",
     previousStation: index === 1 ? rideStops.at(-2) : "",
   })).filter((point) => point.name) : [];
-  const detail = leg.mode === "BUS" ? `${leg.start?.name || "승차"} → ${leg.end?.name || "하차"}` : `${leg.start?.name || "출발지"}에서 ${leg.end?.name || "다음 지점"}까지`;
+  const start = routePointName(leg.start, isBus ? "route.boardBus" : "route.startPoint", t, demo);
+  const end = routePointName(leg.end, isBus ? "route.exitBus" : "route.nextPoint", t, demo);
+  const detail = isBus ? `${start} → ${end}` : t("route.walkBetween", { start, end });
   return <article className={`leg-card mode-${(leg.mode || "other").toLowerCase()}`}>
-    <div className="leg-icon" aria-hidden="true">{{ WALK: "↗", SUBWAY: "▰", BUS: "▣" }[leg.mode] || "→"}</div>
-    <div className="leg-body"><div className="leg-top"><strong>{title}</strong><span>{minutes(leg.sectionTime)}분</span></div>{!isRail && <p>{detail}</p>}
-      {isRail && stops[0] && !hideEntry && <ElevatorNote stop={stops[0]} data={elevatorData} role="entry" />}
-      {isRail && <div className="train-ride"><span aria-hidden="true">→</span><span>지하철 타고 이동</span></div>}
-      {isRail && stops[1] && !hideExit && <ElevatorNote stop={stops[1]} data={elevatorData} role="exit" />}
+    <div className="leg-body"><div className="leg-top"><strong>{title}</strong><span>{t("route.duration", { minutes: minutes(leg.sectionTime) })}</span></div>{!isRail && <p>{detail}</p>}
+      {isRail && stops[0] && !hideEntry && <ElevatorNote stop={stops[0]} data={elevatorData} role="entry" demo={demo} />}
+      {isRail && <div className="train-ride"><span aria-hidden="true">→</span><span>{t("route.rideSubway")}</span></div>}
+      {isRail && stops[1] && !hideExit && <ElevatorNote stop={stops[1]} data={elevatorData} role="exit" demo={demo} />}
     </div>
   </article>;
 }
 
 function App() {
+  const { language, t } = useLanguage();
+  const online = useOnline();
+  const wideLayout = useWideLayout();
+  const routeRequest = useRef(null);
+  const locationRequest = useRef(null);
+  const demoButton = useRef(null);
   const [searchMode, setSearchMode] = useState("route");
   const [origin, setOrigin] = useState("");
   const [originPoint, setOriginPoint] = useState(null);
   const [destination, setDestination] = useState("");
+  const [destinationPoint, setDestinationPoint] = useState(null);
   const [routes, setRoutes] = useState([]);
   const [selected, setSelected] = useState(0);
+  const [resultView, setResultView] = useState("steps");
   const [points, setPoints] = useState(null);
   const [elevatorData, setElevatorData] = useState({});
   const [transferData, setTransferData] = useState({});
@@ -142,10 +241,38 @@ function App() {
       return Array.isArray(stations) ? stations.filter((item) => typeof item === "string").map((item) => `${item}역`) : [];
     } catch { return []; }
   });
-  const route = routes[selected];
+  const route = demo || online ? routes[selected] : null;
   const transfers = useMemo(() => routeTransfers(route), [route]);
+  const originLabel = demo ? t("demo.origin") : originPoint?.name ? suggestionName(originPoint, language)
+    : origin || (originPoint ? t("route.currentLocation") : "");
+  const destinationLabel = demo ? t("demo.destination") : destinationPoint ? suggestionName(destinationPoint, language) : destination;
+  const focusResults = useCallback((heading) => {
+    if (heading && !heading.closest("[hidden]")) heading.focus();
+  }, []);
 
-  useEffect(() => { localStorage.setItem("naeriljari-places", JSON.stringify(favorites)); }, [favorites]);
+  useEffect(() => {
+    if (online) return;
+    routeRequest.current?.abort();
+    routeRequest.current = null;
+    locationRequest.current = null;
+    setBusy(false);
+    setLocating(false);
+    setError("");
+    if (!demo) {
+      setRoutes([]);
+      setPoints(null);
+      setElevatorData({});
+      setTransferData({});
+    }
+  }, [online, demo]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("naeriljari-places", JSON.stringify(favorites));
+    } catch {
+      // Favorites are still available in memory for this session.
+    }
+  }, [favorites]);
 
   function toggleFavorite() {
     if (demo) return;
@@ -155,15 +282,18 @@ function App() {
   }
 
   function previewDemo() {
-    setError(""); setDemo(true); setOrigin("샘플 출발지"); setDestination("샘플 도착지");
+    locationRequest.current = null;
+    setLocating(false);
+    setError(""); setDemo(true); setOrigin(""); setDestination("");
+    setDestinationPoint(null);
     setOriginPoint(null); setPoints(demoPoints); setRoutes(demoRoutes); setSelected(0); setElevatorData(demoElevatorData); setTransferData({});
-    window.setTimeout(() => document.getElementById("route-results")?.scrollIntoView({ behavior: "smooth" }), 50);
+    setResultView("steps");
   }
 
   function closeDemo() {
     setDemo(false); setRoutes([]); setPoints(null); setElevatorData({}); setTransferData({});
     setOrigin(""); setDestination(""); setSelected(0);
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    requestAnimationFrame(() => demoButton.current?.focus());
   }
 
   function clearDemoForEdit() {
@@ -171,62 +301,232 @@ function App() {
     setDemo(false); setRoutes([]); setPoints(null); setElevatorData({}); setTransferData({}); setSelected(0);
   }
 
+  function changeOrigin(name, point = null) {
+    clearDemoForEdit();
+    locationRequest.current = null;
+    setLocating(false);
+    setOrigin(name);
+    setOriginPoint(point);
+  }
+
+  function changeDestination(name, point = null) {
+    clearDemoForEdit();
+    setDestination(name);
+    setDestinationPoint(point);
+  }
+
   function useCurrentLocation() {
+    if (!navigator.onLine) return;
     clearDemoForEdit();
     setError("");
-    if (!navigator.geolocation) { setError("이 브라우저는 현재 위치를 지원하지 않아요. 주소를 직접 입력해 주세요."); return; }
+    if (!navigator.geolocation) { setError("error.locationUnsupported"); return; }
+    const request = Symbol();
+    locationRequest.current = request;
     setLocating(true);
     navigator.geolocation.getCurrentPosition(
-      ({ coords }) => { setOriginPoint({ lat: coords.latitude, lng: coords.longitude }); setOrigin("현재 위치"); setLocating(false); },
-      () => { setError("위치를 가져오지 못했어요. 위치 권한을 허용하거나 주소를 직접 입력해 주세요."); setLocating(false); },
+      ({ coords }) => {
+        if (locationRequest.current !== request || !navigator.onLine) return;
+        setOriginPoint({ lat: coords.latitude, lng: coords.longitude });
+        setOrigin("");
+        setLocating(false);
+      },
+      () => {
+        if (locationRequest.current !== request || !navigator.onLine) return;
+        setError("error.locationFailed");
+        setLocating(false);
+      },
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 },
     );
   }
 
   async function search(event) {
     event.preventDefault();
-    setError(""); setDemo(false); setBusy(true); setRoutes([]); setPoints(null); setElevatorData({}); setTransferData({});
+    if (!navigator.onLine || routeRequest.current) return;
+    setError(""); setDemo(false); setRoutes([]); setPoints(null); setElevatorData({}); setTransferData({});
+    if ((!originPoint && !origin.trim()) || !destination.trim()) {
+      setError("error.routeInput");
+      return;
+    }
+    const request = new AbortController();
+    const { signal } = request;
+    routeRequest.current = request;
+    setBusy(true);
     try {
-      const start = originPoint || await resolvePlace(origin);
-      const end = await resolvePlace(destination);
-      const found = await findTransitRoutes(start, end);
+      const [start, end] = await Promise.all([
+        originPoint || findPlace(origin.trim(), signal),
+        destinationPoint || findPlace(destination.trim(), signal),
+      ]);
+      const found = await findTransitRoutes(start, end, signal);
+      if (signal.aborted || !navigator.onLine) return;
       setPoints({ start, end }); setRoutes(found); setSelected(0);
+      setResultView("steps");
       const stops = new Map(found.flatMap(elevatorStops).map((stop) => [stopKey(stop.name, stop.line), stop]));
       const entries = await Promise.all([...stops].map(async ([key, stop]) => {
-        try { return [key, await findElevatorMovement(stop.name, stop.line)]; }
+        try { return [key, await findElevatorMovement(stop.name, stop.line, signal)]; }
         catch { return [key, { status: "unavailable", facilities: [], paths: [] }]; }
       }));
+      if (signal.aborted || !navigator.onLine) return;
       setElevatorData(Object.fromEntries(entries));
       const uniqueTransfers = new Map(found.flatMap(routeTransfers).map((transfer) => [transferKey(transfer), transfer]));
       const movements = await Promise.all([...uniqueTransfers].map(async ([key, transfer]) => {
-        try { return [key, await findTransferMovement(transfer)]; }
+        try { return [key, await findTransferMovement(transfer, signal)]; }
         catch { return [key, { status: "unavailable", paths: [] }]; }
       }));
-      setTransferData(Object.fromEntries(movements));
-    } catch (cause) { setError(cause.message || "경로를 찾지 못했어요."); }
-    finally { setBusy(false); }
+      if (!signal.aborted && navigator.onLine) setTransferData(Object.fromEntries(movements));
+    } catch (cause) {
+      if (!signal.aborted && navigator.onLine) setError(cause?.messageKey || "error.routeSearch");
+    } finally {
+      if (routeRequest.current === request) {
+        routeRequest.current = null;
+        setBusy(false);
+      }
+    }
   }
 
   return <div className="app-shell">
-    <header className="site-header"><div className="brand-mark" aria-hidden="true">↥</div><div className="brand-name">내릴자리<span>.</span></div><span className="header-caption">엘리베이터 길찾기</span></header>
+    <Header />
     <main>
-      <section className="hero"><div className="eyebrow"><span className="eyebrow-dot" /> 아이와 함께 가는 길, 조금 더 편하게</div>{searchMode === "route" ? <><h1>어디로<br /><em>가시나요?</em></h1><p>출발부터 도착까지 대중교통 길을 찾고,<br className="desktop-break" /> 지하철역의 엘리베이터 안내를 함께 확인하세요.</p></> : <><h1>역의<br /><em>엘리베이터는?</em></h1><p>역 이름만 입력하면 엘리베이터 위치와<br className="desktop-break" /> 현재 확인되는 가동 정보를 볼 수 있어요.</p></>}</section>
-      <nav className="search-mode" aria-label="검색 종류"><button type="button" aria-current={searchMode === "route" ? "page" : undefined} className={searchMode === "route" ? "active" : ""} onClick={() => setSearchMode("route")}>길찾기</button><button type="button" aria-current={searchMode === "station" ? "page" : undefined} className={searchMode === "station" ? "active" : ""} onClick={() => setSearchMode("station")}>역 엘리베이터</button></nav>
-      <div hidden={searchMode !== "route"}>
-      <form className="search-card" onSubmit={search}>
-        <div className="journey-line" aria-hidden="true"><i /><span /><i /></div>
-        <div className="input-stack"><label className="place-field"><span>출발</span><input value={origin} onChange={(event) => { clearDemoForEdit(); setOrigin(event.target.value); setOriginPoint(null); }} placeholder="현재 위치 또는 출발 주소" autoComplete="street-address" /></label><label className="place-field"><span>도착</span><input value={destination} onChange={(event) => { clearDemoForEdit(); setDestination(event.target.value); }} placeholder="도착할 주소 또는 역 이름" autoComplete="off" /></label></div>
-        <div className="form-actions"><button type="button" className="location-button" onClick={useCurrentLocation} disabled={locating}>{locating ? "위치 찾는 중…" : "◎ 현재 위치로 출발"}</button><button className="search-button" type="submit" disabled={busy}>{busy ? "길 찾는 중…" : <>길찾기 <span>↗</span></>}</button></div>
-        <p className="input-hint">주소는 도로명·지번 주소로 입력해 주세요. 역 이름도 입력할 수 있어요.</p>
-      </form>
-      <section className="favorites-row" aria-label="자주 가는 곳"><div className="favorites-heading"><strong>☆ 자주 가는 곳</strong><button type="button" onClick={toggleFavorite} disabled={demo || !destination.trim()}>{demo ? "샘플은 저장하지 않아요" : favorites.includes(destination.trim()) ? "★ 저장됨" : "+ 현재 도착지 저장"}</button></div>{favorites.length > 0 && <div className="favorite-chips">{favorites.map((place) => <button type="button" key={place} onClick={() => { clearDemoForEdit(); setDestination(place); }}>☆ {place}</button>)}</div>}</section>
-      {error && <div className="error-box" role="alert">{error}</div>}
-      {!routes.length && <section className="empty-state"><div className="empty-illustration" aria-hidden="true"><div className="route-squiggle"><span className="point-a" /><span className="point-b" /><span className="mini-lift">↥</span></div></div><h2>길을 찾으면,<br />엘리베이터 정보도 함께 보여드려요.</h2><p>걷기 · 지하철 · 버스를 한눈에 확인하세요.</p><button className="demo-button" type="button" onClick={previewDemo} disabled={busy}>API 없이 화면 둘러보기 <span>↗</span></button><div className="setup-note">실제 길찾기에는 카카오 REST API 키가 필요해요. <a href="/SETUP.md" target="_blank" rel="noreferrer">설정 방법 ↗</a></div></section>}
-      {route && points && <section className="results" id="route-results" aria-live="polite">{demo && <div className="demo-banner"><div><strong>화면 체험 중</strong><span>역·엘리베이터·가동 상태는 모두 가상 예시예요. 실제 이동에 사용하지 마세요.</span></div><button type="button" onClick={closeDemo}>체험 끝내기</button></div>}<div className="results-heading"><div><span className="section-kicker">{demo ? "샘플 경로" : "찾은 길"}</span><h2>{origin} <span>→</span> {destination}</h2></div><span className="route-count">{routes.length}개 경로</span></div><div className="route-options" role="tablist" aria-label="경로 선택">{routes.map((option, index) => { const summary = routeSummary(option); const coverage = elevatorCoverage(option, elevatorData); return <button type="button" role="tab" aria-selected={index === selected} className={`route-option ${index === selected ? "selected" : ""}`} key={index} onClick={() => setSelected(index)}><small>경로 {index + 1}</small><strong>{minutes(option.totalTime)}분</strong><span>환승 {summary.transfers}회 · 도보 {summary.walk}분</span>{routeTransfers(option).length > 0 && <span className="transfer-route-label">환승역: {routeTransfers(option).map((transfer) => `${transfer.station}역`).join(" · ")}</span>}<span className="coverage">엘리베이터 정보 {coverage.available}/{coverage.total}역</span></button>; })}</div><div className="route-layout"><div className="map-column"><RouteMap route={route} start={points.start} end={points.end} demo={demo} /><div className="map-legend"><span><i className="rail-key" /> 지하철</span><span><i className="bus-key" /> 버스</span><span><i className="walk-key" /> 도보</span></div></div><div className="steps-column"><div className="steps-heading"><h3>이동 순서</h3><span>{minutes(route.totalTime)}분 예상</span></div>{(route.legs || []).map((leg, index) => { const nextTransfer = transfers.find((transfer) => transfer.toIndex - 1 === index); return <div key={`${selected}-${index}`}><LegCard leg={leg} elevatorData={elevatorData} hideEntry={transfers.some((transfer) => transfer.toIndex === index)} hideExit={transfers.some((transfer) => transfer.fromIndex === index)} />{nextTransfer && <TransferCard transfer={nextTransfer} elevatorData={elevatorData} movement={transferData[transferKey(nextTransfer)]} demo={demo} />}</div>; })}<div className="arrival-card"><span className="arrival-dot" /> 목적지 도착</div></div></div><div className="safety-note"><span aria-hidden="true">ⓘ</span><p>{demo ? <strong>이것은 가상 경로입니다. 실제 이동에 사용하지 마세요.</strong> : <>이 길은 <strong>계단 없는 경로로 검증된 것은 아닙니다.</strong> 서울시의 가동 상태도 바뀔 수 있으며 도보·환승 구간의 계단과 경사는 확인되지 않았어요. 현장 안내를 확인해 주세요.</>}</p></div></section>}
+      <nav className="search-mode" aria-label={t("search.mode")}>
+        <button type="button" aria-pressed={searchMode === "route"} aria-controls="route-search-panel" onClick={() => setSearchMode("route")}>{t("route.searchMode")}</button>
+        <button type="button" aria-pressed={searchMode === "station"} aria-controls="station-search-panel" onClick={() => setSearchMode("station")}>{t("station.searchMode")}</button>
+      </nav>
+      <div role="status" className={online ? "visually-hidden" : "offline-notice"}>{!online && t("app.offline")}</div>
+      <div id="route-search-panel" hidden={searchMode !== "route"}>
+        <div className="search-workspace">
+          <form className="search-card" onSubmit={search}>
+            <h1>{t("route.searchMode")}</h1>
+            <div className="input-stack">
+              <div className="place-field">
+                <label htmlFor="route-origin">{t("route.origin")}</label>
+                <SuggestionInput
+                  id="route-origin"
+                  value={originLabel}
+                  onChange={changeOrigin}
+                  onSelect={(place) => changeOrigin(place.name, place)}
+                  enabled={online && searchMode === "route" && !demo && !originPoint}
+                  placeholder={t("route.originPlaceholder")}
+                  enterKeyHint="next"
+                />
+              </div>
+              <div className="place-field">
+                <label htmlFor="route-destination">{t("route.destination")}</label>
+                <SuggestionInput
+                  id="route-destination"
+                  value={destinationLabel}
+                  onChange={changeDestination}
+                  onSelect={(place) => changeDestination(place.name, place)}
+                  enabled={online && searchMode === "route" && !demo && !destinationPoint}
+                  placeholder={t("route.destinationPlaceholder")}
+                  enterKeyHint="search"
+                />
+              </div>
+            </div>
+            <div className="form-actions">
+              <button type="button" className="location-button" onClick={useCurrentLocation} disabled={locating || !online}>
+                {!locating && <span aria-hidden="true">◎ </span>}{t(locating ? "route.locating" : "route.useLocation")}
+              </button>
+              <button className="search-button" type="submit" disabled={busy || !online}>
+                {t(busy ? "route.searching" : "route.search")} {!busy && <span aria-hidden="true">↗</span>}
+              </button>
+            </div>
+            <p className="input-hint">{t("route.addressHelp")}</p>
+          </form>
+          <div className="search-tools">
+            <section className="favorites-row" aria-label={t("favorites.title")}>
+              <div className="favorites-heading">
+                <strong><span aria-hidden="true">☆ </span>{t("favorites.title")}</strong>
+                <button type="button" onClick={toggleFavorite} disabled={demo || !destination.trim()}>
+                  <span aria-hidden="true">{favorites.includes(destination.trim()) ? "★ " : "+ "}</span>
+                  {t(favorites.includes(destination.trim()) ? "favorites.saved" : "favorites.save")}
+                </button>
+              </div>
+              {favorites.length > 0 && <div className="favorite-chips">
+                {favorites.map((place) => <button type="button" key={place} onClick={() => changeDestination(place)}>{place}</button>)}
+              </div>}
+            </section>
+            {!route && <button ref={demoButton} className="demo-button" type="button" onClick={previewDemo} disabled={busy}>{t("demo.open")} <span aria-hidden="true">↗</span></button>}
+          </div>
+        </div>
+        {error && online && <div className="error-box" role="alert">{t(error)}{error === "error.kakaoNotConfigured" && <> <a href={setupGuideUrl} target="_blank" rel="noreferrer">{t("route.setupLink")} ↗</a></>}</div>}
+        {route && points && <section className="results" id="route-results" aria-labelledby="route-results-heading">
+          {demo && <div className="demo-banner">
+            <div><strong>{t("demo.banner")}</strong><span>{t("demo.description")}</span></div>
+            <button type="button" onClick={closeDemo}>{t("demo.close")}</button>
+          </div>}
+          <div className="results-heading">
+            <div>
+              <span className="section-kicker">{t(demo ? "demo.route" : "route.results")}</span>
+              <h2 id="route-results-heading" tabIndex={-1} ref={focusResults}>
+                {demo ? originLabel : suggestionName(points.start, language) || t("route.currentLocation")} <span>→</span> {demo ? destinationLabel : suggestionName(points.end, language)}
+              </h2>
+            </div>
+            <span className="route-count">{t("route.count", { count: routes.length })}</span>
+          </div>
+          <div className="route-options" role="group" aria-label={t("route.choose")}>
+            {routes.map((option, index) => {
+              const summary = routeSummary(option);
+              const coverage = elevatorCoverage(option, elevatorData);
+              const stations = routeTransfers(option).map(({ station }) => t("station.title", { station: demo ? demoStationName(station, t) : station }));
+              return <button type="button" aria-pressed={index === selected} className="route-option" key={index} onClick={() => {
+                if (index !== selected) setResultView("steps");
+                setSelected(index);
+              }}>
+                <small>{t("route.option", { number: index + 1 })}</small>
+                <strong>{t("route.duration", { minutes: minutes(option.totalTime) })}</strong>
+                <span>{t("route.optionDetails", summary, summary.transfers)}</span>
+                {stations.length > 0 && <span className="transfer-route-label">{t("route.transferStations", { stations: stations.join(" · ") })}</span>}
+                <span className="coverage">{t("route.coverage", coverage)}</span>
+              </button>;
+            })}
+          </div>
+          {!wideLayout && <div className="result-views" role="group" aria-label={t("route.resultView")}>
+            <button type="button" aria-pressed={resultView === "steps"} aria-controls="trip-steps" onClick={() => setResultView("steps")}>{t("route.steps")}</button>
+            <button type="button" aria-pressed={resultView === "map"} aria-controls="trip-map" onClick={() => setResultView("map")}>{t("route.mapView")}</button>
+          </div>}
+          <div className="route-layout">
+            <div id="trip-steps" className="steps-column" hidden={!wideLayout && resultView !== "steps"}>
+              <div className="steps-heading"><h3>{t("route.steps")}</h3><span>{t("route.estimate", { minutes: minutes(route.totalTime) })}</span></div>
+              {(route.legs || []).map((leg, index) => {
+                const nextTransfer = transfers.find((transfer) => transfer.toIndex - 1 === index);
+                return <div key={`${selected}-${index}`}>
+                  <LegCard leg={leg} elevatorData={elevatorData} demo={demo} hideEntry={transfers.some((transfer) => transfer.toIndex === index)} hideExit={transfers.some((transfer) => transfer.fromIndex === index)} />
+                  {nextTransfer && <TransferCard transfer={nextTransfer} elevatorData={elevatorData} movement={transferData[transferKey(nextTransfer)]} demo={demo} />}
+                </div>;
+              })}
+              <div className="arrival-card"><span className="arrival-dot" /> {t("route.arrival")}</div>
+            </div>
+            <div id="trip-map" className="map-column" hidden={!wideLayout && resultView !== "map"}>
+              {searchMode === "route" && (wideLayout || resultView === "map") &&
+                <RouteMap key={selected} route={route} start={points.start} end={points.end} demo={demo} />}
+            </div>
+          </div>
+          <div className="safety-note">
+            <span aria-hidden="true">ⓘ</span>
+            <p>{demo ? <strong>{t("demo.warning")}</strong> : <><strong>{t("route.safetyWarning")}</strong> {t("route.safetyDetail")}</>}</p>
+          </div>
+        </section>}
       </div>
-      {searchMode === "station" && <StationSearch />}
-    </main><footer>내릴자리 · 이동이 조금 더 쉬워지도록</footer>
+      <div id="station-search-panel" hidden={searchMode !== "station"}>
+        {searchMode === "station" && <StationSearch online={online} />}
+      </div>
+    </main>
+    <footer>
+      {t("app.footer")}
+      <div>
+        <a href="https://data.seoul.go.kr/dataList/OA-2751/F/1/datasetView.do" target="_blank" rel="noreferrer">{t("suggestions.stationSource")}</a>
+        {" · "}
+        <a href="https://www.data.go.kr/data/15085270/fileData.do" target="_blank" rel="noreferrer">{t("suggestions.tollgateSource")}</a>
+      </div>
+    </footer>
   </div>;
 }
 
-createRoot(document.getElementById("root")).render(<App />);
+createRoot(document.getElementById("root")).render(<LanguageProvider><App /></LanguageProvider>);
+
+if (import.meta.env.PROD && window.isSecureContext && "serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/sw.js", { updateViaCache: "none" }).catch((error) => {
+      console.warn("ElevatorFinder could not prepare offline access.", error);
+    });
+  }, { once: true });
+}

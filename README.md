@@ -76,6 +76,15 @@ pnpm dev
 
 Vite will provide a local URL where you can open the app in your browser.
 
+### Install the web app
+
+Run `pnpm build` and then `pnpm preview` to test installation and offline access on localhost. Use an HTTPS deployment to test on a phone.
+
+- In Chrome on Android or Chrome and Edge on desktop, use **Install app** when it appears or open the browser’s install option.
+- On iPhone, open the app in Safari and choose **Share → Add to Home Screen**. Turn on **Open as Web App** if shown, then tap **Add**.
+
+After an online visit has prepared the app for offline use, you can reopen it to view your favorites and try the fictional demo. Live route searches, maps, and elevator status require a connection. Production hosting needs to serve the built files from the site root and forward `/api` requests to the backend.
+
 ## 📁 Project Structure
 
 ```text
@@ -115,7 +124,6 @@ Future ideas for ElevatorFinder include:
 - Verify ground-level elevator coordinates against the named facilities
 - Verify step-free transfer corridors across more stations
 - Accessible route planning
-- Better mobile experience
 - Community reporting for outdated information
 - Expansion beyond Seoul and Korea
 
@@ -135,6 +143,16 @@ ElevatorFinder is being designed with accessibility and convenience in mind, esp
 ElevatorFinder is still in its early stages.
 
 If you find incorrect station information, have accessibility data to contribute, or want to help improve the project, feel free to open an Issue or Pull Request.
+
+### Interface languages
+
+ElevatorFinder defaults to Korean and remembers the selected language in the current browser. English suggestions include independently matched station and tollgate labels alongside the Korean names. The station lookup accepts English station names through these suggestions. Addresses, directions, and place names without a matching English label appear as supplied by their providers.
+
+English station names are from [Seoul Metro’s multilingual station-name data](https://data.seoul.go.kr/dataList/OA-2751/F/1/datasetView.do), November 1, 2024, licensed under [KOGL Type 1](https://www.kogl.or.kr/info/licenseType1.do). The app retains the English primary names and associates them with Korean station names and lines.
+
+Tollgate labels are romanized from the [Korea Expressway Corporation toll office directory](https://www.data.go.kr/data/15085270/fileData.do) and matched by name and municipality. The [road operator’s directory](https://www.ksroad.co.kr/page/company/overview.php) supplies Uiwang.
+
+To add a language, copy `src/i18n/ko.js` into a catalog named for the new locale. Translate each message, keeping its key and named placeholders such as `{station}`. For phrases that change with quantity, provide the appropriate `Intl.PluralRules` forms and an `other` form. Register the catalog and the language’s native name in `src/i18n/messages.js`, then run `node --test src/*.test.js server/*.test.js` and check the language in the demo.
 
 ## 🌏 The Bigger Idea
 

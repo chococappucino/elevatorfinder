@@ -21,18 +21,22 @@ export function normalizeKakaoRoutes(payload) {
       const first = points[0];
       const last = points.at(-1);
       const mode = properties.type === "WALKING" ? "WALK" : properties.type;
-      const previousName = stopName(steps[index - 1], false);
-      const nextName = stopName(steps[index + 1], true);
-      const startName = stopName(step, true) || previousName || (index === 0 ? "출발지" : "도보 출발");
-      const endName = stopName(step, false) || nextName || (index === steps.length - 1 ? "도착지" : "다음 지점");
+      const startName = stopName(step, true) || stopName(steps[index - 1], false);
+      const endName = stopName(step, false) || stopName(steps[index + 1], true);
+      const startLabel = startName ? { name: startName } : index === 0
+        ? { name: "출발지", nameRole: "startPoint" }
+        : { name: "도보 출발", nameRole: "walkStart" };
+      const endLabel = endName ? { name: endName } : index === steps.length - 1
+        ? { name: "도착지", nameRole: "endPoint" }
+        : { name: "다음 지점", nameRole: "nextPoint" };
       return {
         mode,
         route: String(properties.vehicles?.[0]?.name || properties.guidance || ""),
         stops: Array.isArray(properties.stops) ? properties.stops.map((stop) => String(stop?.name || "").trim()).filter(Boolean) : [],
         sectionTime: Number(properties.time) || 0,
         distance: Number(properties.distance) || 0,
-        start: { name: startName, lat: first?.lat, lon: first?.lng },
-        end: { name: endName, lat: last?.lat, lon: last?.lng },
+        start: { ...startLabel, lat: first?.lat, lon: first?.lng },
+        end: { ...endLabel, lat: last?.lat, lon: last?.lng },
         points,
       };
     });
