@@ -12,6 +12,7 @@ import { useOnline, useWideLayout } from "./browserState.js";
 import InstallApp from "./InstallApp.jsx";
 import SuggestionInput from "./SuggestionInput.jsx";
 import StationSearch from "./StationSearch.jsx";
+import StationTrip from "./StationTrip.jsx";
 import FacilityRow from "./FacilityRow.jsx";
 import TransferCard from "./TransferCard.jsx";
 import setupGuideUrl from "../SETUP.md?url";
@@ -389,6 +390,7 @@ function App() {
       <nav className="search-mode" aria-label={t("search.mode")}>
         <button type="button" aria-pressed={searchMode === "route"} aria-controls="route-search-panel" onClick={() => setSearchMode("route")}>{t("route.searchMode")}</button>
         <button type="button" aria-pressed={searchMode === "station"} aria-controls="station-search-panel" onClick={() => setSearchMode("station")}>{t("station.searchMode")}</button>
+        <button type="button" aria-pressed={searchMode === "station-trip"} aria-controls="station-trip-panel" onClick={() => setSearchMode("station-trip")}>{t("stationTrip.tab")}</button>
       </nav>
       <div role="status" className={online ? "visually-hidden" : "offline-notice"}>{!online && t("app.offline")}</div>
       <div id="route-search-panel" hidden={searchMode !== "route"}>
@@ -508,6 +510,9 @@ function App() {
       </div>
       <div id="station-search-panel" hidden={searchMode !== "station"}>
         {searchMode === "station" && <StationSearch online={online} />}
+      </div>
+      <div id="station-trip-panel" hidden={searchMode !== "station-trip"}>
+        {searchMode === "station-trip" && <StationTrip online={online} />}
       </div>
     </main>
     <footer>

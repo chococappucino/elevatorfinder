@@ -5,6 +5,7 @@ import { elevatorLocationParts, isGroundExitFacility, isTransferFacility } from 
 test("separates the train-door position from a platform direction", () => {
   assert.deepEqual(elevatorLocationParts("잠실새내 방면6-3"), { label: "잠실새내 방면", door: "6-3" });
   assert.deepEqual(elevatorLocationParts("9번 출입구"), { label: "9번 출입구", door: "" });
+  assert.deepEqual(elevatorLocationParts("동대문 방면4-4,혜화 방면6-1"), { label: "동대문 방면 4-4 · 혜화 방면 6-1", door: "" });
 });
 
 test("only calls an elevator transfer-specific when the label says so", () => {

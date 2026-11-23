@@ -30,7 +30,7 @@ export function selectSeoulElevators(rows, name, line) {
     const section = String(row.OPR_SEC || "").trim().slice(0, 60);
     const statusText = String(row.USE_YN || "").trim().slice(0, 50);
     const operating = statusText === "사용가능" ? true
-      : /사용불가|고장|중지|운행중단/.test(statusText) ? false : null;
+      : /사용불가|고장|중지|운행중단|보수|점검/.test(statusText) ? false : null;
     return [String(row.STN_CD || "") + nameText + location, {
       name: nameText || "엘리베이터", ...(!nameText && { unnamed: true }),
       location, section, statusText, operating, line: String(row.STN_NM || "").match(/\((\d+)\)\s*$/)?.[1] || "",

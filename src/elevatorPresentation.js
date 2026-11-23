@@ -1,5 +1,9 @@
 export function elevatorLocationParts(location, name) {
   const text = String(location || name || "엘리베이터").trim();
+  const directions = text.split(/[,，]/).map((part) => part.trim()).filter(Boolean);
+  if (directions.length > 1 && directions.every((part) => /방면\s*\d+-\d+/.test(part))) {
+    return { label: directions.map((part) => part.replace(/방면\s*(\d+-\d+)/, "방면 $1")).join(" · "), door: "" };
+  }
   const match = text.match(/^(.*?)\s*방면\s*(\d+-\d+)(.*)$/);
   if (!match) return { label: text, door: "" };
   return { label: `${match[1].trim()} 방면${match[3].trim() ? ` ${match[3].trim()}` : ""}`, door: match[2] };

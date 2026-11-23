@@ -15,6 +15,7 @@ export default defineConfig(({ mode }) => {
   });
 
   return {
+    server: { watch: { ignored: ["**/public/station-maps/**"] } },
     plugins: [
       react(),
       appShell(),
