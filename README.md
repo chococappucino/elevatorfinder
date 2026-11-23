@@ -95,7 +95,15 @@ Run `pnpm build` and then `pnpm preview` to test installation and offline access
 - In Chrome on Android or Chrome and Edge on desktop, use **Install app** when it appears or open the browser’s install option.
 - On iPhone, open the app in Safari and choose **Share → Add to Home Screen**. Turn on **Open as Web App** if shown, then tap **Add**.
 
-After an online visit has prepared the app for offline use, you can reopen it to view your favorites and try the fictional demo. Live route searches, maps, and elevator status require a connection. Production hosting needs to serve the built files from the site root and forward `/api` requests to the backend.
+After an online visit has prepared the app for offline use, you can reopen it to view your favorites and try the fictional demo. Live route searches, maps, and elevator status require a connection.
+
+## 🌐 GitHub Pages
+
+The repository includes a GitHub Actions workflow that builds the app for `https://chococappucino.github.io/elevatorfinder/`. Enable **Settings → Pages → Build and deployment → Source: GitHub Actions** once in GitHub. Pushes to `main` then publish the site automatically.
+
+GitHub Pages serves static files and cannot run the private API code in `server/`. Until a separate backend is accessible, the Pages build labels itself as a visual preview and disables live searches. The fictional route demo remains available. The workflow can set `VITE_API_BASE_URL` to a public backend origin to enable live route, station, and elevator searches; that backend must allow requests from `https://chococappucino.github.io`.
+
+Keep Kakao REST, Seoul, and optional KRIC keys in the backend's private settings. The Kakao JavaScript map key is browser-visible by design; restrict it to the GitHub Pages domain in Kakao Developers.
 
 ## 📁 Project Structure
 
